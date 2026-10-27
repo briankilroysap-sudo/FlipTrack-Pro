@@ -390,4 +390,622 @@
       const actBody = sumCat("bodyGlass");
       const actOther = sumCat("otherCash");
       const actFin = sumCat("financing");
-      const actTotalCash = actPurchase + actMech + actBody + actOther + act
+      const actTotalCash = actPurchase + actMech + actBody + actOther + actFin;
+
+      const b = proj.budget || {};
+      const budTotalCash = Number(b.purchase || 0) + Number(b.mechanical || 0) + Number(b.bodyGlass || 0) + Number(b.otherCash || 0) + Number(b.financing || 0);
+
+      const actLaborHrs = (proj.laborLogs || []).reduce((s, l) => s + Number(l.hours || 0), 0);
+      const budLaborHrs = Number(b.laborHours || 0);
+      const rate = Number(proj.laborRate || 35);
+      const budLaborVal = budLaborHrs * rate;
+      const actLaborVal = actLaborHrs * rate;
+
+      const hasActualSale = proj.actualSale !== null && proj.actualSale !== "" && !isNaN(proj.actualSale);
+      const actSaleVal = hasActualSale ? Number(proj.actualSale) : null;
+
+      const budCashProfit = Number(b.saleRevenue || 0) - budTotalCash;
+      const budProfitAfterLabor = budCashProfit - budLaborVal;
+
+      const actCashProfit = hasActualSale ? (actSaleVal - actTotalCash) : null;
+      const actProfitAfterLabor = hasActualSale ? (actCashProfit - actLaborVal) : null;
+
+      return {
+        actPurchase, actMech, actBody, actOther, actFin, actTotalCash,
+        budTotalCash, actLaborHrs, budLaborHrs, budLaborVal, actLaborVal,
+        hasActualSale, actSaleVal, budCashProfit, budProfitAfterLabor,
+        actCashProfit, actProfitAfterLabor
+      };
+    }
+
+    // Connect to Firebase Firestore with auto-seeding if empty
+    function initStorage() {
+      const statusEl = document.getElementById("syncStatus");
+
+      try {
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        dbDocRef = db.collection("fliptrack_shared").doc("master_ledger");
+
+        dbDocRef.onSnapshot((doc) => {
+          if (doc.exists && doc.data() && doc.data().projects) {
+            const incoming = doc.data();
+            appState = {
+              loanSettings: { ...DEFAULT_STATE.loanSettings, ...(incoming.loanSettings || {}) },
+              projects: incoming.projects || DEFAULT_STATE.projects
+            };
+            renderAll();
+            statusEl.textContent = "● Cloud Synced (Live)";
+            statusEl.className = "text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30";
+          } else {
+            // Seed default state into Firebase if empty
+            dbDocRef.set(DEFAULT_STATE).then(() => {
+              appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+              renderAll();
+              statusEl.textContent = "● Cloud Synced (Seeded)";
+              statusEl.className = "text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30";
+            });
+          }
+        }, (err) => {
+          console.error("Firestore error:", err);
+          statusEl.textContent = "⚠ Local Fallback Mode";
+          statusEl.className = "text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-200 border border-red-400/30";
+          const saved = localStorage.getItem("fliptrack_local_state");
+          if (saved) appState = JSON.parse(saved);
+          renderAll();
+        });
+      } catch (e) {
+        console.error(e);
+        const saved = localStorage.getItem("fliptrack_local_state");
+        if (saved) appState = JSON.parse(saved);
+        renderAll();
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem("fliptrack_local_state", JSON.stringify(appState));
+      if (dbDocRef) {
+        dbDocRef.set(appState).catch((err) => {
+          console.error("Save error:", err);
+          renderAll();
+        });
+      } else {
+        renderAll();
+      }
+    }
+
+    // Master Render Function
+    function renderAll() {
+      const projectsList = Object.values(appState.projects || {});
+      const loanSettings = appState.loanSettings || DEFAULT_STATE.loanSettings;
+
+      let totalBudCash = 0;
+      let totalActCash = 0;
+      let totalBudFinancing = 0;
+      let totalFlipBudSale = 0;
+      let totalFlipActSale = 0;
+      let totalFlipBudCashProfit = 0;
+      let totalFlipBudProfitAfterLabor = 0;
+      let totalBudHours = 0;
+      let totalActHours = 0;
+      let totalBudLaborVal = 0;
+      let totalActLaborVal = 0;
+      let ownerOutOfPocketBud = 0;
+
+      projectsList.forEach(p => {
+        const m = computeProjectMetrics(p);
+        totalBudCash += m.budTotalCash;
+        totalActCash += m.actTotalCash;
+        totalBudFinancing += Number(p.budget?.financing || 0);
+        totalBudHours += m.budLaborHrs;
+        totalActHours += m.actLaborHrs;
+        totalBudLaborVal += m.budLaborVal;
+        totalActLaborVal += m.actLaborVal;
+
+        if (!p.retained) {
+          totalFlipBudSale += Number(p.budget?.saleRevenue || 0);
+          if (m.hasActualSale) totalFlipActSale += m.actSaleVal;
+          totalFlipBudCashProfit += m.budCashProfit;
+          totalFlipBudProfitAfterLabor += m.budProfitAfterLabor;
+          ownerOutOfPocketBud += Number(p.budget?.bodyGlass || 0) + Number(p.budget?.otherCash || 0);
+        }
+      });
+
+      const origPrincipal = Number(loanSettings.originalPrincipal || 30125);
+      const f250Proceeds = Number(loanSettings.f250ClearedProceeds || 0);
+      const totalLoanPayoffBud = origPrincipal + totalBudFinancing;
+      const clearedRepaymentsToDate = totalFlipActSale + f250Proceeds;
+      const principalRemainingLive = Math.max(0, origPrincipal - clearedRepaymentsToDate);
+      const principalRemainingAtForecast = Math.max(0, origPrincipal - (totalFlipBudSale + f250Proceeds));
+
+      // 1. Render Top KPI Ribbon
+      document.getElementById("kpiRibbon").innerHTML = `
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Lender Loan Balance</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold">Payoff Target: ${fmtCurrency(totalLoanPayoffBud)}</span>
+          </div>
+          <div class="text-2xl font-extrabold text-[#123156] mt-1">${fmtCurrency(principalRemainingLive)}</div>
+          <div class="text-xs text-slate-500 mt-1">
+            Paid down: <strong class="text-emerald-700">${fmtCurrency(clearedRepaymentsToDate)}</strong> • Forecast bal: <strong>${fmtCurrency(principalRemainingAtForecast)}</strong>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Cash Invested</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">${Math.round((totalActCash / (totalBudCash || 1)) * 100)}% of Budget</span>
+          </div>
+          <div class="text-2xl font-extrabold text-slate-800 mt-1">${fmtCurrency(totalActCash)}</div>
+          <div class="text-xs text-slate-500 mt-1">
+            Total Budget: <strong>${fmtCurrency(totalBudCash)}</strong> (Variance: <span class="text-red-600">${fmtCurrency(totalActCash - totalBudCash)}</span>)
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Flip Profit (Hemi + Chevy)</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">Est. Sales: ${fmtCurrency(totalFlipBudSale)}</span>
+          </div>
+          <div class="text-2xl font-extrabold text-emerald-700 mt-1">${fmtCurrency(totalFlipBudCashProfit)} <span class="text-xs font-normal text-slate-500">cash profit</span></div>
+          <div class="text-xs text-slate-500 mt-1">
+            After $35/hr Labor: <strong>${fmtCurrency(totalFlipBudProfitAfterLabor)}</strong> • Actual Sold: <strong>${fmtCurrency(totalFlipActSale)}</strong>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sweat Equity Logged</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold">$35/hr Rate</span>
+          </div>
+          <div class="text-2xl font-extrabold text-slate-800 mt-1">${totalActHours.toFixed(1)} <span class="text-sm font-semibold text-slate-500">/ ${totalBudHours.toFixed(1)} hrs</span></div>
+          <div class="text-xs text-slate-500 mt-1">
+            Logged Labor Value: <strong class="text-emerald-700">${fmtCurrency(totalActLaborVal)}</strong> (Target: ${fmtCurrency(totalBudLaborVal)})
+          </div>
+        </div>
+      `;
+
+      // 2. Render Navigation Tabs
+      const tabsEl = document.getElementById("projectTabs");
+      const dashBtnHtml = `
+        <button onclick="switchTab('dashboard')"
+          class="px-4 py-2 rounded-md text-xs font-bold tracking-wide uppercase transition flex items-center gap-1.5 ${
+            activeTab === 'dashboard'
+              ? 'bg-[#123156] text-white shadow'
+              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+          }">
+          📊 PORTFOLIO & LOAN DASHBOARD
+        </button>
+      `;
+
+      const projBtnsHtml = projectsList.map(p => `
+        <button onclick="switchTab('${p.id}')"
+          class="px-4 py-2 rounded-md text-xs font-bold tracking-wide uppercase transition ${
+            p.id === activeTab
+              ? 'bg-[#123156] text-white shadow'
+              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-300'
+          }">
+          ${p.title}
+        </button>
+      `).join("");
+
+      tabsEl.innerHTML = dashBtnHtml + projBtnsHtml;
+
+      const dashView = document.getElementById("dashboardView");
+      const detailView = document.getElementById("projectDetailView");
+
+      if (activeTab === "dashboard") {
+        dashView.classList.remove("hidden");
+        detailView.classList.add("hidden");
+        renderDashboardView(projectsList, loanSettings, {
+          origPrincipal, f250Proceeds, totalBudFinancing, totalLoanPayoffBud,
+          totalFlipBudSale, totalFlipActSale, clearedRepaymentsToDate,
+          principalRemainingLive, principalRemainingAtForecast, ownerOutOfPocketBud
+        });
+      } else {
+        dashView.classList.add("hidden");
+        detailView.classList.remove("hidden");
+        renderProjectDetailView(activeTab);
+      }
+    }
+
+    // Render the Dashboard View
+    function renderDashboardView(projectsList, loanSettings, summary) {
+      const gridEl = document.getElementById("portfolioCardsGrid");
+      gridEl.innerHTML = projectsList.map(p => {
+        const m = computeProjectMetrics(p);
+        const pctCash = m.budTotalCash > 0 ? Math.min(100, Math.round((m.actTotalCash / m.budTotalCash) * 100)) : 100;
+        const pctHours = m.budLaborHrs > 0 ? Math.min(100, Math.round((m.actLaborHrs / m.budLaborHrs) * 100)) : 0;
+
+        const statusBadge = p.retained
+          ? `<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">Retained Work Truck</span>`
+          : (m.hasActualSale
+              ? `<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Sold (${fmtCurrency(m.actSaleVal)})</span>`
+              : `<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800">Active Flip</span>`);
+
+        return `
+          <div onclick="switchTab('${p.id}')" class="bg-white rounded-lg shadow border border-slate-200 hover:border-[#123156] cursor-pointer transition overflow-hidden flex flex-col justify-between">
+            <div>
+              <div class="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+                <span class="font-bold text-xs uppercase tracking-wide">${p.title}</span>
+                ${statusBadge}
+              </div>
+              <div class="p-4 space-y-3 text-xs">
+                <div class="text-slate-500 font-medium">${p.subtitle}</div>
+
+                <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
+                  <div>
+                    <div class="text-slate-400 text-[10px] uppercase">Total Cash (Act / Bud)</div>
+                    <div class="font-bold text-slate-800 text-sm">${fmtCurrency(m.actTotalCash)} <span class="text-xs font-normal text-slate-500">/ ${fmtCurrency(m.budTotalCash)}</span></div>
+                  </div>
+                  <div>
+                    <div class="text-slate-400 text-[10px] uppercase">${p.retained ? 'Asset Allocation' : 'Target Sale Price'}</div>
+                    <div class="font-bold text-[#123156] text-sm">${p.retained ? 'Keep for Plowing' : fmtCurrency(p.budget?.saleRevenue)}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1">
+                    <span class="text-slate-500">Cash Budget Used</span>
+                    <span class="font-semibold">${pctCash}%</span>
+                  </div>
+                  <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div class="bg-[#123156] h-2" style="width: ${pctCash}%"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1">
+                    <span class="text-slate-500">Labor Hours (${m.actLaborHrs.toFixed(1)} / ${m.budLaborHrs.toFixed(1)} hrs)</span>
+                    <span class="font-semibold text-emerald-700">${fmtCurrency(m.actLaborVal)} logged</span>
+                  </div>
+                  <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div class="bg-emerald-600 h-2" style="width: ${pctHours}%"></div>
+                  </div>
+                </div>
+
+                <div class="pt-2 border-t border-slate-100 flex justify-between items-center">
+                  <span class="text-slate-500">Forecast Cash Profit:</span>
+                  <span class="font-bold ${p.retained ? 'text-slate-600' : 'text-emerald-700'}">
+                    ${p.retained ? 'Retained — No Sale' : fmtCurrency(m.budCashProfit)}
+                  </span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span class="text-slate-500">Forecast Profit After Labor:</span>
+                  <span class="font-bold ${!p.retained && m.budProfitAfterLabor < 0 ? 'text-red-600' : 'text-slate-800'}">
+                    ${p.retained ? 'Retained — No Sale' : fmtCurrency(m.budProfitAfterLabor)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="bg-slate-50 px-4 py-2 border-t border-slate-200 text-right text-[11px] font-semibold text-[#123156]">
+              Open Project Ledger & Log Receipts →
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("loanPrincipalInput").value = summary.origPrincipal;
+      document.getElementById("f250ProceedsInput").value = summary.f250Proceeds || "";
+      document.getElementById("serviceMarginInput").value = loanSettings.serviceContributionMarginPct || 60;
+
+      const waterfallRows = [
+        { label: "Original Lender Principal (3-Truck Acquisition + Hemi Allowance)", val: fmtCurrency(summary.origPrincipal), cls: "font-semibold text-slate-900" },
+        { label: "Projected Holding Financing / Interest (Cummins $742, Hemi $41, Chevy $63)", val: fmtCurrency(summary.totalBudFinancing), cls: "text-slate-600" },
+        { label: "Estimated Total Loan Payoff (Principal + Financing)", val: fmtCurrency(summary.totalLoanPayoffBud), cls: "font-bold text-[#123156] bg-slate-50" },
+        { label: "Expected Combined Flip Sale Revenue (Hemi $13.5k + Chevy $11.5k Base)", val: fmtCurrency(summary.totalFlipBudSale), cls: "text-emerald-700 font-semibold" },
+        { label: "2005 F-250 Harley-Davidson Cleared Sale Applied to Principal", val: fmtCurrency(summary.f250Proceeds), cls: "text-emerald-700 font-semibold" },
+        { label: "Actual Flip Sales Cleared to Date", val: fmtCurrency(summary.totalFlipActSale), cls: "text-slate-700" },
+        { label: "Principal Still Owed at Base Flip Estimates (incl. F-250 paydown)", val: fmtCurrency(summary.principalRemainingAtForecast), cls: "font-bold text-amber-800 bg-amber-50/70" },
+        { label: "Owner Out-of-Pocket Flip Cash Needed (Chevy Body $2k + Prep $1k)", val: fmtCurrency(summary.ownerOutOfPocketBud), cls: "text-red-600 font-medium" }
+      ];
+
+      document.getElementById("lenderWaterfallBody").innerHTML = waterfallRows.map(r => `
+        <tr class="${r.cls}">
+          <td class="py-2 px-3">${r.label}</td>
+          <td class="py-2 px-3 text-right">${r.val}</td>
+        </tr>
+      `).join("");
+
+      const flipLaborValToRecover = 3150;
+      const netServiceNeededBase = Math.max(0, summary.totalLoanPayoffBud + summary.ownerOutOfPocketBud + flipLaborValToRecover - summary.totalFlipBudSale - summary.f250Proceeds);
+      const netServiceNeededTargets = Math.max(0, summary.totalLoanPayoffBud + summary.ownerOutOfPocketBud + flipLaborValToRecover - 30125 - summary.f250Proceeds);
+      const marginDec = (Number(loanSettings.serviceContributionMarginPct || 60)) / 100;
+      const grossServiceNeededBase = marginDec > 0 ? (netServiceNeededBase / marginDec) : 0;
+      const grossServiceNeededTargets = marginDec > 0 ? (netServiceNeededTargets / marginDec) : 0;
+
+      const cumminsRows = [
+        { label: "Loan Payoff Incl. Projected Financing", val: fmtCurrency(summary.totalLoanPayoffBud) },
+        { label: "Personal Flip Cash Costs to Recover (Body / Prep)", val: fmtCurrency(summary.ownerOutOfPocketBud) },
+        { label: "Value of Flip Labor to Recover (90 hrs @ $35/hr)", val: fmtCurrency(flipLaborValToRecover) },
+        { label: "Less: Expected Combined Flip Sales + F-250 Proceeds", val: fmtCurrency(summary.totalFlipBudSale + summary.f250Proceeds) },
+        { label: "Net Service / Plowing Earnings Needed — Base Estimate", val: fmtCurrency(netServiceNeededBase), bold: true },
+        { label: "Net Service / Plowing Earnings Needed — At $30,125 Flip Targets", val: fmtCurrency(netServiceNeededTargets) },
+        { label: `Gross Plowing Revenue Needed — Base (at ${loanSettings.serviceContributionMarginPct}% Margin)`, val: fmtCurrency(grossServiceNeededBase), bold: true },
+        { label: `Gross Plowing Revenue Needed — At Targets (at ${loanSettings.serviceContributionMarginPct}% Margin)`, val: fmtCurrency(grossServiceNeededTargets) }
+      ];
+
+      document.getElementById("cumminsBreakevenBody").innerHTML = cumminsRows.map(r => `
+        <tr class="${r.bold ? 'font-bold bg-slate-50 text-slate-900' : 'text-slate-700'}">
+          <td class="py-2 px-3">${r.label}</td>
+          <td class="py-2 px-3 text-right">${r.val}</td>
+        </tr>
+      `).join("");
+
+      const calloutEl = document.getElementById("plowingCalloutBox");
+      if (summary.f250Proceeds >= 15000) {
+        calloutEl.className = "p-3.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-900 text-xs leading-relaxed";
+        calloutEl.innerHTML = `<strong>F-250 Liquidity Impact:</strong> Applying <strong>${fmtCurrency(summary.f250Proceeds)}</strong> from the 2005 F-250 sale combined with $25,000 in base flip sales completely retires the $30,125 principal and leaves working capital to cover the Chevy body and prep costs.`;
+      } else {
+        calloutEl.className = "p-3.5 rounded border border-amber-300 bg-amber-50 text-amber-900 text-xs leading-relaxed";
+        calloutEl.innerHTML = `<strong>Coaching & Cash Flow Benchmark:</strong> Without the F-250 sale entered above, the Cummins must generate <strong>${fmtCurrency(netServiceNeededBase)}</strong> in net service profit (or <strong>${fmtCurrency(grossServiceNeededBase)}</strong> in gross plowing billings at a ${loanSettings.serviceContributionMarginPct}% margin) to make the portfolio whole. Enter <strong>15000</strong> in the <em>2005 F-250 Cleared Sale</em> box on the left to model the debt paydown.`;
+      }
+
+      const allExps = [];
+      const allLabs = [];
+      projectsList.forEach(p => {
+        (p.expenses || []).forEach(e => allExps.push({ ...e, projTitle: p.title }));
+        (p.laborLogs || []).forEach(l => allLabs.push({ ...l, projTitle: p.title }));
+      });
+
+      document.getElementById("combinedActivityFeed").innerHTML = `
+        <div>
+          <h4 class="font-semibold text-slate-500 uppercase mb-2">Latest Cash Expenses Logged</h4>
+          ${allExps.length === 0
+            ? `<p class="text-slate-400 italic">No receipts logged across any project yet.</p>`
+            : `<div class="space-y-1.5">${allExps.slice(0, 6).map(e => `
+                <div class="flex justify-between items-center bg-slate-50 px-3 py-1.5 rounded border border-slate-200">
+                  <div>
+                    <span class="font-bold text-[#123156]">[${e.projTitle.split(' ')[0]}]</span>
+                    <span class="text-slate-500 ml-1">${e.date}</span> •
+                    <span class="text-slate-700 font-medium ml-1">${e.desc}</span>
+                  </div>
+                  <span class="font-bold text-slate-900">${fmtCurrency(e.amount)}</span>
+                </div>
+              `).join("")}</div>`
+          }
+        </div>
+        <div>
+          <h4 class="font-semibold text-slate-500 uppercase mb-2">Latest Sweat Equity Sessions</h4>
+          ${allLabs.length === 0
+            ? `<p class="text-slate-400 italic">No labor hours logged across any project yet.</p>`
+            : `<div class="space-y-1.5">${allLabs.slice(0, 6).map(l => `
+                <div class="flex justify-between items-center bg-slate-50 px-3 py-1.5 rounded border border-slate-200">
+                  <div>
+                    <span class="font-bold text-emerald-800">[${l.projTitle.split(' ')[0]}]</span>
+                    <span class="text-slate-500 ml-1">${l.date}</span> •
+                    <span class="text-slate-700 font-medium ml-1">${l.task}</span>
+                  </div>
+                  <span class="font-bold text-emerald-700">${Number(l.hours).toFixed(1)} hrs</span>
+                </div>
+              `).join("")}</div>`
+          }
+        </div>
+      `;
+    }
+
+    // Render Individual Project View
+    function renderProjectDetailView(projectId) {
+      const proj = appState.projects[projectId];
+      if (!proj) return;
+
+      document.getElementById("projectTitle").textContent = proj.title;
+      document.getElementById("projectTypeBadge").textContent = proj.subtitle;
+
+      const m = computeProjectMetrics(proj);
+      const b = proj.budget || {};
+
+      const rows = [
+        { label: "Purchase", bud: fmtCurrency(b.purchase), act: fmtCurrency(m.actPurchase), varObj: fmtVarianceCurrency(m.actPurchase, b.purchase) },
+        { label: "Mechanical", bud: fmtCurrency(b.mechanical, true), act: fmtCurrency(m.actMech, true), varObj: fmtVarianceCurrency(m.actMech, b.mechanical) },
+        { label: "Body / glass", bud: fmtCurrency(b.bodyGlass, true), act: fmtCurrency(m.actBody, true), varObj: fmtVarianceCurrency(m.actBody, b.bodyGlass) },
+        { label: "Other cash", bud: fmtCurrency(b.otherCash, true), act: fmtCurrency(m.actOther, true), varObj: fmtVarianceCurrency(m.actOther, b.otherCash) },
+        { label: "Financing", bud: fmtCurrency(b.financing, true), act: fmtCurrency(m.actFin, true), varObj: fmtVarianceCurrency(m.actFin, b.financing) },
+        { label: "Total cash cost", bud: fmtCurrency(m.budTotalCash), act: fmtCurrency(m.actTotalCash), varObj: fmtVarianceCurrency(m.actTotalCash, m.budTotalCash), bold: true },
+        {
+          label: "Labor hours",
+          bud: m.budLaborHrs.toFixed(1),
+          act: m.actLaborHrs.toFixed(1),
+          varObj: {
+            text: (m.actLaborHrs - m.budLaborHrs).toFixed(1),
+            cls: (m.actLaborHrs - m.budLaborHrs) < 0 ? "text-slate-700" : "text-amber-700 font-semibold"
+          }
+        },
+        { label: "Labor value", bud: fmtCurrency(m.budLaborVal), act: fmtCurrency(m.actLaborVal, true), varObj: fmtVarianceCurrency(m.actLaborVal, m.budLaborVal) },
+        {
+          label: "Sale revenue",
+          bud: proj.retained ? "$0" : fmtCurrency(b.saleRevenue),
+          act: proj.retained ? "Retained — no sale" : (m.hasActualSale ? fmtCurrency(m.actSaleVal) : ""),
+          varObj: { text: "", cls: "" },
+          highlightSale: !proj.retained && !m.hasActualSale
+        },
+        {
+          label: "Cash profit",
+          bud: proj.retained ? "Retained — no sale" : fmtCurrency(m.budCashProfit),
+          act: proj.retained ? "Retained — no sale" : (m.hasActualSale ? fmtCurrency(m.actCashProfit) : "Not sold"),
+          varObj: { text: "", cls: "" },
+          bold: true
+        },
+        {
+          label: "Profit after labor",
+          bud: proj.retained ? "Retained — no sale" : fmtCurrency(m.budProfitAfterLabor),
+          act: proj.retained ? "Retained — no sale" : (m.hasActualSale ? fmtCurrency(m.actProfitAfterLabor) : "Not sold"),
+          varObj: { text: "", cls: "" },
+          bold: true
+        }
+      ];
+
+      document.getElementById("accountingTableBody").innerHTML = rows.map(r => `
+        <tr class="${r.bold ? 'bg-slate-50/80 font-semibold' : 'hover:bg-slate-50'}">
+          <td class="py-2.5 px-5 text-slate-800">${r.label}</td>
+          <td class="py-2.5 px-5 text-right">${r.bud}</td>
+          <td class="py-2.5 px-5 text-right ${r.highlightSale ? 'bg-amber-50/90 border border-amber-200' : ''}">${r.act}</td>
+          <td class="py-2.5 px-5 text-right ${r.varObj.cls}">${r.varObj.text}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("editActualPurchase").value = m.actPurchase;
+      document.getElementById("editBudgetMech").value = b.mechanical;
+      document.getElementById("editBudgetBody").value = b.bodyGlass;
+      document.getElementById("editBudgetOther").value = b.otherCash;
+      document.getElementById("editBudgetFin").value = b.financing;
+      document.getElementById("editBudgetHours").value = b.laborHours;
+      document.getElementById("editBudgetSale").value = b.saleRevenue;
+      document.getElementById("editActualSale").value = m.hasActualSale ? proj.actualSale : "";
+
+      const expEl = document.getElementById("expenseList");
+      const exps = proj.expenses || [];
+      expEl.innerHTML = exps.length === 0
+        ? `<p class="text-slate-400 italic">No cash receipts logged yet.</p>`
+        : exps.map((e, idx) => `
+          <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
+            <div>
+              <span class="font-semibold text-slate-700">${e.date}</span> •
+              <span class="uppercase text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">${e.category}</span>
+              <span class="text-slate-600 ml-1">${e.desc}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-800">$${Number(e.amount).toLocaleString()}</span>
+              <button onclick="deleteExpense(${idx})" class="text-red-500 hover:text-red-700 font-bold">×</button>
+            </div>
+          </div>
+        `).join("");
+
+      const labEl = document.getElementById("laborList");
+      const labs = proj.laborLogs || [];
+      labEl.innerHTML = labs.length === 0
+        ? `<p class="text-slate-400 italic">No labor hours logged yet.</p>`
+        : labs.map((l, idx) => `
+          <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
+            <div>
+              <span class="font-semibold text-slate-700">${l.date}</span> •
+              <span class="text-slate-600 ml-1">${l.task}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-emerald-700">${Number(l.hours).toFixed(1)} hrs</span>
+              <button onclick="deleteLabor(${idx})" class="text-red-500 hover:text-red-700 font-bold">×</button>
+            </div>
+          </div>
+        `).join("");
+    }
+
+    window.switchTab = (tabId) => {
+      activeTab = tabId;
+      renderAll();
+    };
+
+    window.saveLoanSettings = () => {
+      appState.loanSettings = {
+        originalPrincipal: parseFloat(document.getElementById("loanPrincipalInput").value) || 30125,
+        f250ClearedProceeds: parseFloat(document.getElementById("f250ProceedsInput").value) || 0,
+        serviceContributionMarginPct: parseFloat(document.getElementById("serviceMarginInput").value) || 60
+      };
+      saveState();
+    };
+
+    window.deleteExpense = (idx) => {
+      if (activeTab === "dashboard") return;
+      appState.projects[activeTab].expenses.splice(idx, 1);
+      saveState();
+    };
+
+    window.deleteLabor = (idx) => {
+      if (activeTab === "dashboard") return;
+      appState.projects[activeTab].laborLogs.splice(idx, 1);
+      saveState();
+    };
+
+    document.getElementById("expenseForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (activeTab === "dashboard") return;
+      const proj = appState.projects[activeTab];
+      proj.expenses = proj.expenses || [];
+      proj.expenses.unshift({
+        date: document.getElementById("expDate").value,
+        category: document.getElementById("expCategory").value,
+        desc: document.getElementById("expDesc").value,
+        amount: parseFloat(document.getElementById("expAmount").value)
+      });
+      document.getElementById("expDesc").value = "";
+      document.getElementById("expAmount").value = "";
+      saveState();
+    });
+
+    document.getElementById("laborForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (activeTab === "dashboard") return;
+      const proj = appState.projects[activeTab];
+      proj.laborLogs = proj.laborLogs || [];
+      proj.laborLogs.unshift({
+        date: document.getElementById("labDate").value,
+        hours: parseFloat(document.getElementById("labHours").value),
+        task: document.getElementById("labTask").value
+      });
+      document.getElementById("labHours").value = "";
+      document.getElementById("labTask").value = "";
+      saveState();
+    });
+
+    document.getElementById("saveBudgetsBtn").addEventListener("click", () => {
+      if (activeTab === "dashboard") return;
+      const proj = appState.projects[activeTab];
+      const purchVal = parseFloat(document.getElementById("editActualPurchase").value) || 0;
+      proj.actualPurchase = purchVal;
+      proj.budget.purchase = purchVal;
+      proj.budget.mechanical = parseFloat(document.getElementById("editBudgetMech").value) || 0;
+      proj.budget.bodyGlass = parseFloat(document.getElementById("editBudgetBody").value) || 0;
+      proj.budget.otherCash = parseFloat(document.getElementById("editBudgetOther").value) || 0;
+      proj.budget.financing = parseFloat(document.getElementById("editBudgetFin").value) || 0;
+      proj.budget.laborHours = parseFloat(document.getElementById("editBudgetHours").value) || 0;
+      proj.budget.saleRevenue = parseFloat(document.getElementById("editBudgetSale").value) || 0;
+
+      const saleVal = document.getElementById("editActualSale").value;
+      proj.actualSale = saleVal === "" ? null : parseFloat(saleVal);
+      saveState();
+    });
+
+    window.openNewProjectModal = () => {
+      const m = document.getElementById("newProjectModal");
+      m.classList.remove("hidden");
+      m.classList.add("flex");
+    };
+
+    window.closeNewProjectModal = () => {
+      const m = document.getElementById("newProjectModal");
+      m.classList.add("hidden");
+      m.classList.remove("flex");
+    };
+
+    document.getElementById("newProjectForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = document.getElementById("newProjTitle").value.trim().toUpperCase();
+      const subtitle = document.getElementById("newProjSub").value.trim();
+      const purchase = parseFloat(document.getElementById("newProjPurchase").value) || 0;
+      const saleRevenue = parseFloat(document.getElementById("newProjSale").value) || 0;
+      const mechanical = parseFloat(document.getElementById("newProjMech").value) || 0;
+      const laborHours = parseFloat(document.getElementById("newProjHours").value) || 0;
+      const retained = document.getElementById("newProjRetained").checked;
+
+      const id = "truck_" + Date.now();
+      appState.projects[id] = {
+        id,
+        title,
+        subtitle,
+        retained,
+        laborRate: 35,
+        budget: { purchase, mechanical, bodyGlass: 0, otherCash: 0, financing: 0, laborHours, saleRevenue: retained ? 0 : saleRevenue },
+        actualPurchase: purchase,
+        actualSale: null,
+        expenses: [],
+        laborLogs: []
+      };
+
+      closeNewProjectModal();
+      activeTab = id;
+      saveState();
+    });
+
+    initStorage();
+  </script>
+</body>
+</html>
