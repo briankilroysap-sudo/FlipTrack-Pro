@@ -356,7 +356,7 @@
     };
 
     let appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-    let activeTab = "dashboard"; // "dashboard" or project ID ("hemi", "chevy", "cummins", etc.)
+    let activeTab = "dashboard"; // "dashboard" or project ID
     let dbDocRef = null;
 
     const todayStr = new Date().toISOString().split("T")[0];
@@ -385,15 +385,9 @@
     // Calculate metrics for a single project
     function computeProjectMetrics(proj) {
       const sumCat = (cat) => (proj.expenses || []).filter(e => e.category === cat).reduce((s, e) => s + Number(e.amount || 0), 0);
-      const actPurchase = Number(proj.actualPurchase ?? proj.budget.purchase ?? 0);
+      const actPurchase = Number(proj.actualPurchase ?? proj.budget?.purchase ?? 0);
       const actMech = sumCat("mechanical");
       const actBody = sumCat("bodyGlass");
       const actOther = sumCat("otherCash");
       const actFin = sumCat("financing");
-      const actTotalCash = actPurchase + actMech + actBody + actOther + actFin;
-
-      const b = proj.budget;
-      const budTotalCash = Number(b.purchase || 0) + Number(b.mechanical || 0) + Number(b.bodyGlass || 0) + Number(b.otherCash || 0) + Number(b.financing || 0);
-
-      const actLaborHrs = (proj.laborLogs || []).reduce((s, l) => s + Number(l.hours || 0), 0);
-      const budLaborHrs = Number(b.laborHours || 0
+      const actTotalCash = actPurchase + actMech + actBody + actOther + act
