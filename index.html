@@ -3,21 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FlipTrack Pro — Project Accounting & Budget Tracker</title>
+  <title>FlipTrack Pro — Portfolio Dashboard & Project Accounting</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
-<body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
+<body class="bg-slate-100 text-slate-900 min-h-screen font-sans pb-12">
 
   <!-- Top Header -->
   <header class="bg-[#123156] text-white shadow-md">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-xl font-bold tracking-wide">FLIPTRACK PRO — PROJECT ACCOUNTING</h1>
-        <p class="text-xs text-slate-300">Budget vs. Actual Margin, Cash Expense & Sweat Equity Tracker</p>
+        <h1 class="text-xl font-bold tracking-wide">FLIPTRACK PRO — PORTFOLIO & PROJECT ACCOUNTING</h1>
+        <p class="text-xs text-slate-300">Executive Lender Payback Dashboard, Budget vs. Actual Margin & Sweat Equity Tracker</p>
       </div>
       <div class="flex items-center gap-3">
+        <button onclick="openNewProjectModal()" class="text-xs bg-white/10 hover:bg-white/20 text-white font-semibold px-3 py-1.5 rounded border border-white/20 transition">
+          + Add Truck Project
+        </button>
         <span id="syncStatus" class="text-xs px-3 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30">
           Connecting to FlipTrack Pro...
         </span>
@@ -25,125 +28,269 @@
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-    <!-- Project Tabs -->
-    <div class="flex flex-wrap gap-2 border-b border-slate-300 pb-3" id="projectTabs"></div>
+    <!-- Executive KPI Summary Ribbon (Always Visible) -->
+    <section id="kpiRibbon" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></section>
 
-    <!-- Main Accounting Table -->
-    <section class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
-      <div class="bg-[#123156] text-white px-5 py-3 flex items-center justify-between">
-        <h2 id="projectTitle" class="font-bold tracking-wide text-sm uppercase">HEMI — FLIP PROJECT</h2>
-        <span id="projectTypeBadge" class="text-xs bg-white/15 px-2.5 py-0.5 rounded">Repair & Sell</span>
+    <!-- Navigation Tabs (Dashboard + Individual Trucks) -->
+    <div class="flex flex-wrap items-center gap-2 border-b border-slate-300 pb-3" id="projectTabs"></div>
+
+    <!-- =================================================================== -->
+    <!-- VIEW 1: PORTFOLIO & LOAN PAYBACK DASHBOARD                          -->
+    <!-- =================================================================== -->
+    <div id="dashboardView" class="space-y-6">
+
+      <!-- Side-by-Side Truck Project Cards -->
+      <section>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold uppercase tracking-wide text-slate-700">Active Truck Projects — Side-by-Side Comparison</h2>
+          <span class="text-xs text-slate-500">Click any truck card to log receipts, labor hours, or edit budgets</span>
+        </div>
+        <div id="portfolioCardsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-5"></div>
+      </section>
+
+      <!-- Lender Payback Waterfall & Cummins Plowing Breakeven -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Lender Payback & Working Capital Waterfall -->
+        <section class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+          <div class="bg-[#123156] text-white px-5 py-3 flex items-center justify-between">
+            <h3 class="font-bold tracking-wide text-xs uppercase">Lender Loan Payback & Working Capital Waterfall</h3>
+            <span class="text-[11px] bg-white/15 px-2 py-0.5 rounded">Principal-First Structure</span>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <tbody id="lenderWaterfallBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+
+            <!-- Interactive Loan & F-250 Capital Inputs -->
+            <div class="bg-slate-50 border border-slate-200 rounded p-3.5 text-xs space-y-3">
+              <div class="font-semibold text-slate-700 uppercase tracking-wide">Adjust Loan & Existing Inventory Paydown Assumptions</div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-slate-500 mb-1">Original Loan Principal ($)</label>
+                  <input type="number" id="loanPrincipalInput" class="w-full border border-slate-300 rounded px-2.5 py-1.5 font-semibold bg-white" />
+                </div>
+                <div>
+                  <label class="block text-slate-500 mb-1">2005 F-250 Cleared Sale ($)</label>
+                  <input type="number" id="f250ProceedsInput" placeholder="e.g. 15000" class="w-full border border-emerald-400 bg-emerald-50/40 rounded px-2.5 py-1.5 font-semibold" />
+                </div>
+                <div>
+                  <label class="block text-slate-500 mb-1">Service Contribution Margin (%)</label>
+                  <input type="number" step="1" id="serviceMarginInput" class="w-full border border-slate-300 rounded px-2.5 py-1.5 font-semibold bg-white" />
+                </div>
+              </div>
+              <div class="flex justify-end">
+                <button onclick="saveLoanSettings()" class="bg-[#123156] hover:bg-slate-800 text-white font-semibold px-3.5 py-1.5 rounded transition">
+                  Update Payback Waterfall
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- What the Cummins Must Earn From Service / Plowing Work -->
+        <section class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+          <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+            <h3 class="font-bold tracking-wide text-xs uppercase">What the Cummins Must Earn (Plowing / Service Breakeven)</h3>
+            <span class="text-[11px] bg-white/15 px-2 py-0.5 rounded">2016 Ram 3500 6.7L</span>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Because the <strong>Cummins ($15,625 purchase + $742 financing)</strong> is retained as a work truck rather than flipped, any remaining loan balance and unrecovered flip costs must be earned back through snow plowing and commercial service jobs.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <tbody id="cumminsBreakevenBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+            <div id="plowingCalloutBox" class="p-3.5 rounded border text-xs leading-relaxed"></div>
+          </div>
+        </section>
+
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-slate-200 bg-slate-50 text-slate-600 text-left">
-              <th class="py-3 px-5 font-semibold">Metric</th>
-              <th class="py-3 px-5 font-semibold text-right">Budget / forecast</th>
-              <th class="py-3 px-5 font-semibold text-right">Actual to date</th>
-              <th class="py-3 px-5 font-semibold text-right">Actual less budget</th>
-            </tr>
-          </thead>
-          <tbody id="accountingTableBody" class="divide-y divide-slate-100"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Quick Entry Forms: Expense Log & Time Log -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-      <!-- Cash Expense Log -->
+      <!-- Master Activity Feed (All Trucks Combined) -->
       <section class="bg-white rounded-lg shadow border border-slate-200 p-5">
-        <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-1">Log Cash Expense / Receipt</h3>
-        <p class="text-xs text-slate-500 mb-4">Adds directly to Actual to Date for the selected truck.</p>
+        <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-3">Recent Cash Receipts & Sweat Equity Across All Trucks</h3>
+        <div id="combinedActivityFeed" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs"></div>
+      </section>
 
-        <form id="expenseForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-          <input type="date" id="expDate" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
-          <select id="expCategory" class="border border-slate-300 rounded px-3 py-2 text-sm">
-            <option value="mechanical">Mechanical</option>
-            <option value="bodyGlass">Body / glass</option>
-            <option value="otherCash">Other cash</option>
-            <option value="financing">Financing</option>
-          </select>
-          <input type="text" id="expDesc" placeholder="Vendor / part description" required class="border border-slate-300 rounded px-3 py-2 text-sm sm:col-span-1" />
-          <input type="number" step="0.01" id="expAmount" placeholder="Amount ($)" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
-          <button type="submit" class="sm:col-span-2 bg-[#123156] hover:bg-slate-800 text-white font-semibold py-2 px-4 rounded text-sm transition">
-            + Add Cash Expense
-          </button>
-        </form>
+    </div>
 
-        <div class="border-t border-slate-200 pt-3">
-          <h4 class="text-xs font-semibold text-slate-500 uppercase mb-2">Recent Receipts</h4>
-          <div id="expenseList" class="space-y-1.5 max-h-48 overflow-y-auto text-xs"></div>
+    <!-- =================================================================== -->
+    <!-- VIEW 2: INDIVIDUAL PROJECT ACCOUNTING VIEW                          -->
+    <!-- =================================================================== -->
+    <div id="projectDetailView" class="space-y-6 hidden">
+
+      <!-- Main Accounting Table -->
+      <section class="bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+        <div class="bg-[#123156] text-white px-5 py-3 flex items-center justify-between">
+          <h2 id="projectTitle" class="font-bold tracking-wide text-sm uppercase">HEMI — FLIP PROJECT</h2>
+          <span id="projectTypeBadge" class="text-xs bg-white/15 px-2.5 py-0.5 rounded">Repair & Sell</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 bg-slate-50 text-slate-600 text-left">
+                <th class="py-3 px-5 font-semibold">Metric</th>
+                <th class="py-3 px-5 font-semibold text-right">Budget / forecast</th>
+                <th class="py-3 px-5 font-semibold text-right">Actual to date</th>
+                <th class="py-3 px-5 font-semibold text-right">Actual less budget</th>
+              </tr>
+            </thead>
+            <tbody id="accountingTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
         </div>
       </section>
 
-      <!-- Labor Hours Log -->
+      <!-- Quick Entry Forms: Expense Log & Time Log -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Cash Expense Log -->
+        <section class="bg-white rounded-lg shadow border border-slate-200 p-5">
+          <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-1">Log Cash Expense / Receipt</h3>
+          <p class="text-xs text-slate-500 mb-4">Adds directly to Actual to Date for the selected truck.</p>
+
+          <form id="expenseForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+            <input type="date" id="expDate" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
+            <select id="expCategory" class="border border-slate-300 rounded px-3 py-2 text-sm">
+              <option value="mechanical">Mechanical</option>
+              <option value="bodyGlass">Body / glass</option>
+              <option value="otherCash">Other cash</option>
+              <option value="financing">Financing</option>
+            </select>
+            <input type="text" id="expDesc" placeholder="Vendor / part description" required class="border border-slate-300 rounded px-3 py-2 text-sm sm:col-span-1" />
+            <input type="number" step="0.01" id="expAmount" placeholder="Amount ($)" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
+            <button type="submit" class="sm:col-span-2 bg-[#123156] hover:bg-slate-800 text-white font-semibold py-2 px-4 rounded text-sm transition">
+              + Add Cash Expense
+            </button>
+          </form>
+
+          <div class="border-t border-slate-200 pt-3">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase mb-2">Recent Receipts</h4>
+            <div id="expenseList" class="space-y-1.5 max-h-48 overflow-y-auto text-xs"></div>
+          </div>
+        </section>
+
+        <!-- Labor Hours Log -->
+        <section class="bg-white rounded-lg shadow border border-slate-200 p-5">
+          <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-1">Log Sweat Equity / Labor Hours</h3>
+          <p class="text-xs text-slate-500 mb-4">Valued at $35/hr to measure true profit after labor.</p>
+
+          <form id="laborForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+            <input type="date" id="labDate" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
+            <input type="number" step="0.25" id="labHours" placeholder="Hours worked (e.g. 3.5)" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
+            <input type="text" id="labTask" placeholder="Task / repair performed" required class="border border-slate-300 rounded px-3 py-2 text-sm sm:col-span-2" />
+            <button type="submit" class="sm:col-span-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-4 rounded text-sm transition">
+              + Log Labor Hours
+            </button>
+          </form>
+
+          <div class="border-t border-slate-200 pt-3">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase mb-2">Logged Work Sessions</h4>
+            <div id="laborList" class="space-y-1.5 max-h-48 overflow-y-auto text-xs"></div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Budget & Sale Price Controls -->
       <section class="bg-white rounded-lg shadow border border-slate-200 p-5">
-        <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-1">Log Sweat Equity / Labor Hours</h3>
-        <p class="text-xs text-slate-500 mb-4">Valued at $35/hr to measure true profit after labor.</p>
-
-        <form id="laborForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-          <input type="date" id="labDate" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
-          <input type="number" step="0.25" id="labHours" placeholder="Hours worked (e.g. 3.5)" required class="border border-slate-300 rounded px-3 py-2 text-sm" />
-          <input type="text" id="labTask" placeholder="Task / repair performed" required class="border border-slate-300 rounded px-3 py-2 text-sm sm:col-span-2" />
-          <button type="submit" class="sm:col-span-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-4 rounded text-sm transition">
-            + Log Labor Hours
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide">Update Actual Sale Price or Edit Budgets</h3>
+          <span class="text-xs text-slate-500">Purchase Price ($): <input type="number" id="editActualPurchase" class="w-24 border border-slate-300 rounded px-2 py-0.5 text-xs font-semibold ml-1" /></span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
+          <div>
+            <label class="block text-slate-500 mb-1">Budget Mechanical ($)</label>
+            <input type="number" id="editBudgetMech" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-slate-500 mb-1">Budget Body/Glass ($)</label>
+            <input type="number" id="editBudgetBody" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-slate-500 mb-1">Budget Other Cash ($)</label>
+            <input type="number" id="editBudgetOther" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-slate-500 mb-1">Budget Financing ($)</label>
+            <input type="number" id="editBudgetFin" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-slate-500 mb-1">Target Labor Hrs</label>
+            <input type="number" step="0.5" id="editBudgetHours" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block text-slate-500 mb-1">Forecast Sale ($)</label>
+            <input type="number" id="editBudgetSale" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
+          </div>
+          <div>
+            <label class="block font-semibold text-amber-800 mb-1">Actual Sale Price ($)</label>
+            <input type="number" id="editActualSale" placeholder="Leave blank if unsold" class="w-full border-2 border-amber-400 bg-amber-50 rounded px-2.5 py-1.5 font-semibold" />
+          </div>
+        </div>
+        <div class="mt-3 flex justify-end">
+          <button id="saveBudgetsBtn" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded">
+            Save Budget / Sale Updates
           </button>
-        </form>
-
-        <div class="border-t border-slate-200 pt-3">
-          <h4 class="text-xs font-semibold text-slate-500 uppercase mb-2">Logged Work Sessions</h4>
-          <div id="laborList" class="space-y-1.5 max-h-48 overflow-y-auto text-xs"></div>
         </div>
       </section>
 
     </div>
 
-    <!-- Budget & Sale Price Controls -->
-    <section class="bg-white rounded-lg shadow border border-slate-200 p-5">
-      <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide mb-3">Update Actual Sale Price or Edit Budgets</h3>
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
-        <div>
-          <label class="block text-slate-500 mb-1">Budget Mechanical ($)</label>
-          <input type="number" id="editBudgetMech" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-slate-500 mb-1">Budget Body/Glass ($)</label>
-          <input type="number" id="editBudgetBody" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-slate-500 mb-1">Budget Other Cash ($)</label>
-          <input type="number" id="editBudgetOther" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-slate-500 mb-1">Budget Financing ($)</label>
-          <input type="number" id="editBudgetFin" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-slate-500 mb-1">Target Labor Hrs</label>
-          <input type="number" step="0.5" id="editBudgetHours" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block text-slate-500 mb-1">Forecast Sale ($)</label>
-          <input type="number" id="editBudgetSale" class="w-full border border-slate-300 rounded px-2.5 py-1.5" />
-        </div>
-        <div>
-          <label class="block font-semibold text-amber-800 mb-1">Actual Sale Price ($)</label>
-          <input type="number" id="editActualSale" placeholder="Leave blank if unsold" class="w-full border-2 border-amber-400 bg-amber-50 rounded px-2.5 py-1.5 font-semibold" />
-        </div>
-      </div>
-      <div class="mt-3 flex justify-end">
-        <button id="saveBudgetsBtn" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded">
-          Save Budget / Sale Updates
-        </button>
-      </div>
-    </section>
-
   </main>
+
+  <!-- Modal for Adding a New Truck Project -->
+  <div id="newProjectModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+        <h3 class="font-bold text-slate-800 text-sm uppercase">Add Truck Project</h3>
+        <button onclick="closeNewProjectModal()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">×</button>
+      </div>
+      <form id="newProjectForm" class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-600 font-semibold mb-1">Tab Title (e.g. F-250 HARLEY — LIQUIDATION)</label>
+          <input type="text" id="newProjTitle" required placeholder="F-250 HARLEY — LIQUIDATION" class="w-full border border-slate-300 rounded px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-slate-600 font-semibold mb-1">Vehicle Subtitle / Description</label>
+          <input type="text" id="newProjSub" required placeholder="2005 Ford F-250 6.0L Powerstroke" class="w-full border border-slate-300 rounded px-3 py-2" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-600 font-semibold mb-1">Purchase Cost ($)</label>
+            <input type="number" id="newProjPurchase" value="0" required class="w-full border border-slate-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-slate-600 font-semibold mb-1">Forecast Sale ($)</label>
+            <input type="number" id="newProjSale" value="15000" required class="w-full border border-slate-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-slate-600 font-semibold mb-1">Mechanical Budget ($)</label>
+            <input type="number" id="newProjMech" value="0" class="w-full border border-slate-300 rounded px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-slate-600 font-semibold mb-1">Target Labor Hours</label>
+            <input type="number" id="newProjHours" value="10" class="w-full border border-slate-300 rounded px-3 py-2" />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <input type="checkbox" id="newProjRetained" class="rounded border-slate-300" />
+          <label for="newProjRetained" class="text-slate-600">Retained work asset (Keep for business, not for flip)</label>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-200">
+          <button type="button" onclick="closeNewProjectModal()" class="px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button type="submit" class="px-4 py-1.5 rounded bg-[#123156] text-white font-semibold hover:bg-slate-800">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script>
     // ============================================================================
@@ -160,9 +307,14 @@
     };
 
     // ============================================================================
-    // DEFAULT PROJECT DATA (Pre-loaded with Hemi, Chevy & Cummins from workbook)
+    // DEFAULT STATE (Pre-loaded with Hemi, Chevy, Cummins + Loan Settings)
     // ============================================================================
     const DEFAULT_STATE = {
+      loanSettings: {
+        originalPrincipal: 30125,
+        f250ClearedProceeds: 0,
+        serviceContributionMarginPct: 60
+      },
       projects: {
         hemi: {
           id: "hemi",
@@ -204,10 +356,9 @@
     };
 
     let appState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-    let activeProjectId = "hemi";
+    let activeTab = "dashboard"; // "dashboard" or project ID ("hemi", "chevy", "cummins", etc.)
     let dbDocRef = null;
 
-    // Initialize Today's Date in inputs
     const todayStr = new Date().toISOString().split("T")[0];
     document.getElementById("expDate").value = todayStr;
     document.getElementById("labDate").value = todayStr;
@@ -231,75 +382,10 @@
       return { text: `$${rounded.toLocaleString()}`, cls: "text-amber-700 font-semibold" };
     };
 
-    // Connect to Firebase Firestore
-    function initStorage() {
-      const statusEl = document.getElementById("syncStatus");
-
-      try {
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        dbDocRef = db.collection("fliptrack_shared").doc("master_ledger");
-
-        dbDocRef.onSnapshot((doc) => {
-          if (doc.exists) {
-            appState = doc.data();
-            renderAll();
-            statusEl.textContent = "● Cloud Synced (Live)";
-            statusEl.className = "text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30";
-          } else {
-            dbDocRef.set(appState);
-          }
-        }, (err) => {
-          console.error("Firestore error:", err);
-          statusEl.textContent = "⚠ Enable Firestore in Test Mode (Local Fallback Active)";
-          statusEl.className = "text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-200 border border-red-400/30";
-          const saved = localStorage.getItem("fliptrack_local_state");
-          if (saved) appState = JSON.parse(saved);
-          renderAll();
-        });
-      } catch (e) {
-        console.error(e);
-        const saved = localStorage.getItem("fliptrack_local_state");
-        if (saved) appState = JSON.parse(saved);
-        renderAll();
-      }
-    }
-
-    function saveState() {
-      localStorage.setItem("fliptrack_local_state", JSON.stringify(appState));
-      if (dbDocRef) {
-        dbDocRef.set(appState).catch((err) => {
-          console.error("Save error:", err);
-          renderAll();
-        });
-      } else {
-        renderAll();
-      }
-    }
-
-    function renderAll() {
-      const proj = appState.projects[activeProjectId];
-      if (!proj) return;
-
-      // Render Tabs
-      const tabsEl = document.getElementById("projectTabs");
-      tabsEl.innerHTML = Object.values(appState.projects).map(p => `
-        <button onclick="switchProject('${p.id}')"
-          class="px-4 py-2 rounded-md text-xs font-bold tracking-wide uppercase transition ${
-            p.id === activeProjectId
-              ? 'bg-[#123156] text-white shadow'
-              : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-300'
-          }">
-          ${p.title}
-        </button>
-      `).join("");
-
-      document.getElementById("projectTitle").textContent = proj.title;
-      document.getElementById("projectTypeBadge").textContent = proj.subtitle;
-
-      // Sum Actuals from Logs
+    // Calculate metrics for a single project
+    function computeProjectMetrics(proj) {
       const sumCat = (cat) => (proj.expenses || []).filter(e => e.category === cat).reduce((s, e) => s + Number(e.amount || 0), 0);
-      const actPurchase = Number(proj.actualPurchase || 0);
+      const actPurchase = Number(proj.actualPurchase ?? proj.budget.purchase ?? 0);
       const actMech = sumCat("mechanical");
       const actBody = sumCat("bodyGlass");
       const actOther = sumCat("otherCash");
@@ -307,177 +393,7 @@
       const actTotalCash = actPurchase + actMech + actBody + actOther + actFin;
 
       const b = proj.budget;
-      const budTotalCash = Number(b.purchase) + Number(b.mechanical) + Number(b.bodyGlass) + Number(b.otherCash) + Number(b.financing);
+      const budTotalCash = Number(b.purchase || 0) + Number(b.mechanical || 0) + Number(b.bodyGlass || 0) + Number(b.otherCash || 0) + Number(b.financing || 0);
 
       const actLaborHrs = (proj.laborLogs || []).reduce((s, l) => s + Number(l.hours || 0), 0);
-      const budLaborHrs = Number(b.laborHours || 0);
-      const budLaborVal = budLaborHrs * proj.laborRate;
-      const actLaborVal = actLaborHrs * proj.laborRate;
-
-      const hasActualSale = proj.actualSale !== null && proj.actualSale !== "" && !isNaN(proj.actualSale);
-      const actSaleVal = hasActualSale ? Number(proj.actualSale) : null;
-
-      const budCashProfit = Number(b.saleRevenue) - budTotalCash;
-      const budProfitAfterLabor = budCashProfit - budLaborVal;
-
-      const actCashProfit = hasActualSale ? (actSaleVal - actTotalCash) : null;
-      const actProfitAfterLabor = hasActualSale ? (actCashProfit - actLaborVal) : null;
-
-      const rows = [
-        { label: "Purchase", bud: fmtCurrency(b.purchase), act: fmtCurrency(actPurchase), varObj: fmtVarianceCurrency(actPurchase, b.purchase) },
-        { label: "Mechanical", bud: fmtCurrency(b.mechanical, true), act: fmtCurrency(actMech, true), varObj: fmtVarianceCurrency(actMech, b.mechanical) },
-        { label: "Body / glass", bud: fmtCurrency(b.bodyGlass, true), act: fmtCurrency(actBody, true), varObj: fmtVarianceCurrency(actBody, b.bodyGlass) },
-        { label: "Other cash", bud: fmtCurrency(b.otherCash, true), act: fmtCurrency(actOther, true), varObj: fmtVarianceCurrency(actOther, b.otherCash) },
-        { label: "Financing", bud: fmtCurrency(b.financing, true), act: fmtCurrency(actFin, true), varObj: fmtVarianceCurrency(actFin, b.financing) },
-        { label: "Total cash cost", bud: fmtCurrency(budTotalCash), act: fmtCurrency(actTotalCash), varObj: fmtVarianceCurrency(actTotalCash, budTotalCash), bold: true },
-        {
-          label: "Labor hours",
-          bud: budLaborHrs.toFixed(1),
-          act: actLaborHrs.toFixed(1),
-          varObj: {
-            text: (actLaborHrs - budLaborHrs).toFixed(1),
-            cls: (actLaborHrs - budLaborHrs) < 0 ? "text-slate-700" : "text-amber-700 font-semibold"
-          }
-        },
-        { label: "Labor value", bud: fmtCurrency(budLaborVal), act: fmtCurrency(actLaborVal, true), varObj: fmtVarianceCurrency(actLaborVal, budLaborVal) },
-        {
-          label: "Sale revenue",
-          bud: proj.retained ? "$0" : fmtCurrency(b.saleRevenue),
-          act: proj.retained ? "Retained — no sale" : (hasActualSale ? fmtCurrency(actSaleVal) : ""),
-          varObj: { text: "", cls: "" },
-          highlightSale: !proj.retained && !hasActualSale
-        },
-        {
-          label: "Cash profit",
-          bud: proj.retained ? "Retained — no sale" : fmtCurrency(budCashProfit),
-          act: proj.retained ? "Retained — no sale" : (hasActualSale ? fmtCurrency(actCashProfit) : "Not sold"),
-          varObj: { text: "", cls: "" },
-          bold: true
-        },
-        {
-          label: "Profit after labor",
-          bud: proj.retained ? "Retained — no sale" : fmtCurrency(budProfitAfterLabor),
-          act: proj.retained ? "Retained — no sale" : (hasActualSale ? fmtCurrency(actProfitAfterLabor) : "Not sold"),
-          varObj: { text: "", cls: "" },
-          bold: true
-        }
-      ];
-
-      document.getElementById("accountingTableBody").innerHTML = rows.map(r => `
-        <tr class="${r.bold ? 'bg-slate-50/80 font-semibold' : 'hover:bg-slate-50'}">
-          <td class="py-2.5 px-5 text-slate-800">${r.label}</td>
-          <td class="py-2.5 px-5 text-right">${r.bud}</td>
-          <td class="py-2.5 px-5 text-right ${r.highlightSale ? 'bg-amber-50/90 border border-amber-200' : ''}">${r.act}</td>
-          <td class="py-2.5 px-5 text-right ${r.varObj.cls}">${r.varObj.text}</td>
-        </tr>
-      `).join("");
-
-      // Populate Budget Inputs
-      document.getElementById("editBudgetMech").value = b.mechanical;
-      document.getElementById("editBudgetBody").value = b.bodyGlass;
-      document.getElementById("editBudgetOther").value = b.otherCash;
-      document.getElementById("editBudgetFin").value = b.financing;
-      document.getElementById("editBudgetHours").value = b.laborHours;
-      document.getElementById("editBudgetSale").value = b.saleRevenue;
-      document.getElementById("editActualSale").value = hasActualSale ? proj.actualSale : "";
-
-      // Render Expense List
-      const expEl = document.getElementById("expenseList");
-      const exps = proj.expenses || [];
-      expEl.innerHTML = exps.length === 0
-        ? `<p class="text-slate-400 italic">No cash receipts logged yet.</p>`
-        : exps.map((e, idx) => `
-          <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
-            <div>
-              <span class="font-semibold text-slate-700">${e.date}</span> •
-              <span class="uppercase text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">${e.category}</span>
-              <span class="text-slate-600 ml-1">${e.desc}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-slate-800">$${Number(e.amount).toLocaleString()}</span>
-              <button onclick="deleteExpense(${idx})" class="text-red-500 hover:text-red-700 font-bold">×</button>
-            </div>
-          </div>
-        `).join("");
-
-      // Render Labor List
-      const labEl = document.getElementById("laborList");
-      const labs = proj.laborLogs || [];
-      labEl.innerHTML = labs.length === 0
-        ? `<p class="text-slate-400 italic">No labor hours logged yet.</p>`
-        : labs.map((l, idx) => `
-          <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
-            <div>
-              <span class="font-semibold text-slate-700">${l.date}</span> •
-              <span class="text-slate-600 ml-1">${l.task}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-emerald-700">${Number(l.hours).toFixed(1)} hrs</span>
-              <button onclick="deleteLabor(${idx})" class="text-red-500 hover:text-red-700 font-bold">×</button>
-            </div>
-          </div>
-        `).join("");
-    }
-
-    window.switchProject = (id) => {
-      activeProjectId = id;
-      renderAll();
-    };
-
-    window.deleteExpense = (idx) => {
-      appState.projects[activeProjectId].expenses.splice(idx, 1);
-      saveState();
-    };
-
-    window.deleteLabor = (idx) => {
-      appState.projects[activeProjectId].laborLogs.splice(idx, 1);
-      saveState();
-    };
-
-    document.getElementById("expenseForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const proj = appState.projects[activeProjectId];
-      proj.expenses = proj.expenses || [];
-      proj.expenses.unshift({
-        date: document.getElementById("expDate").value,
-        category: document.getElementById("expCategory").value,
-        desc: document.getElementById("expDesc").value,
-        amount: parseFloat(document.getElementById("expAmount").value)
-      });
-      document.getElementById("expDesc").value = "";
-      document.getElementById("expAmount").value = "";
-      saveState();
-    });
-
-    document.getElementById("laborForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const proj = appState.projects[activeProjectId];
-      proj.laborLogs = proj.laborLogs || [];
-      proj.laborLogs.unshift({
-        date: document.getElementById("labDate").value,
-        hours: parseFloat(document.getElementById("labHours").value),
-        task: document.getElementById("labTask").value
-      });
-      document.getElementById("labHours").value = "";
-      document.getElementById("labTask").value = "";
-      saveState();
-    });
-
-    document.getElementById("saveBudgetsBtn").addEventListener("click", () => {
-      const proj = appState.projects[activeProjectId];
-      proj.budget.mechanical = parseFloat(document.getElementById("editBudgetMech").value) || 0;
-      proj.budget.bodyGlass = parseFloat(document.getElementById("editBudgetBody").value) || 0;
-      proj.budget.otherCash = parseFloat(document.getElementById("editBudgetOther").value) || 0;
-      proj.budget.financing = parseFloat(document.getElementById("editBudgetFin").value) || 0;
-      proj.budget.laborHours = parseFloat(document.getElementById("editBudgetHours").value) || 0;
-      proj.budget.saleRevenue = parseFloat(document.getElementById("editBudgetSale").value) || 0;
-
-      const saleVal = document.getElementById("editActualSale").value;
-      proj.actualSale = saleVal === "" ? null : parseFloat(saleVal);
-      saveState();
-    });
-
-    initStorage();
-  </script>
-</body>
-</html>
+      const budLaborHrs = Number(b.laborHours || 0
